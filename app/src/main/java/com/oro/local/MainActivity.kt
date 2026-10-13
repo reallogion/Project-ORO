@@ -3,13 +3,12 @@ package com.oro.local
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import com.oro.local.data.model.RiskLevel
 import com.oro.local.data.model.RiskResult
 import com.oro.local.data.model.VitalsSample
 import com.oro.local.data.source.Scenario
@@ -22,20 +21,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    LiveVitalsScreen()
+                    OroApp()
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LiveVitalsScreen() {
+fun OroApp() {
     val source = remember { SimulatedWatchSource() }
     val engine = remember { BaselineEngine() }
     var sample by remember { mutableStateOf<VitalsSample?>(null) }
     var result by remember { mutableStateOf<RiskResult?>(null) }
-    var current by remember { mutableStateOf(Scenario.NORMAL) }
+    var scenario by remember { mutableStateOf(Scenario.NORMAL) }
+    var surveillanceMode by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(0) }
+    val tabs = listOf("Home", "Risks", "History", "Settings")
 
     LaunchedEffect(Unit) {
         source.samples().collect { s ->
@@ -44,59 +47,46 @@ fun LiveVitalsScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text("ORO Local - Live Vitals", style = MaterialTheme.typography.headlineSmall)
-        Text("Scenario: $current")
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Scenario.values().forEach { s ->
-                Button(onClick = {
-                    source.scenario = s
-                    current = s
-                }) { Text(s.name) }
-            }
-        }
-
-        val r = result
-        if (r != null) {
-            val color = when {
-                r.learning -> Color(0xFFBBDEFB)
-                r.level == RiskLevel.OK -> Color(0xFFC8E6C9)
-                r.level == RiskLevel.WARNING -> Color(0xFFFFF59D)
-                else -> Color(0xFFFFCDD2)
-            }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = color),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        if (r.learning) "LEARNING" else r.level.name,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(r.explanation)
-                    if (r.deviatingVitals.isNotEmpty()) {
-                        Text("Deviating: " + r.deviatingVitals.joinToString(", "))
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (surveillanceMode) "ORO Surveillance" else "ORO Local") },
+                actions = {
+                    TextButton(onClick = { surveillanceMode = !surveillanceMode }) {
+                        Text(if (surveillanceMode) "Personal mode" else "Surveillance mode")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            if (!surveillanceMode) {
+                NavigationBar {
+                    tabs.forEachIndexed { i, name ->
+                        NavigationBarItem(
+                            selected = tab == i,
+                            onClick = { tab = i },
+                            icon = {},
+                            label = { Text(name) }
+                        )
                     }
                 }
             }
         }
-
-        val v = sample
-        if (v == null) {
-            Text("Waiting for data...")
-        } else {
-            Text("Heart rate: ${v.heartRate} bpm")
-            Text("SpO2: ${v.spo2} %")
-            Text("Body temp: ${"%.1f".format(v.bodyTempC)} °C")
-            Text("Ambient: ${"%.1f".format(v.ambientTempC)} °C, ${v.humidityPct.toInt()} % humidity")
-            Text("HRV: ${v.hrvMs.toInt()} ms")
-            Text("Battery: ${v.batteryPct} %")
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            if (surveillanceMode) {
+                SurveillanceScreen()
+            } else {
+                when (tab) {
+                    0 -> HomeScreen(sample, result, scenario) {
+                        source.scenario = it
+                        scenario = it
+                    }
+                    1 -> RisksScreen(result)
+                    2 -> HistoryScreen()
+                    else -> SettingsScreen()
+                }
+            }
         }
     }
 }
